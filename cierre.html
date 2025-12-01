@@ -16,7 +16,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Animación suave para el reporte */
         .fade-in {
             animation: fadeIn 0.3s ease-in;
         }
@@ -35,14 +34,44 @@
     </style>
 </head>
 
-<body class="bg-slate-100 text-slate-800">
+<body class="bg-slate-100 text-slate-800 transition-colors duration-300">
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+        // --- TU CONFIGURACIÓN (YA INSERTADA) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDIfYedJ-S-fvVeRHRq3o-BEv0es_EUH9U",
+            authDomain: "coete-system.firebaseapp.com",
+            projectId: "coete-system",
+            storageBucket: "coete-system.firebasestorage.app",
+            messagingSenderId: "139946462232",
+            appId: "1:139946462232:web:fcc25397ebaac8c10cc76d"
+        };
+
+        // Inicializar Firebase
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("🔥 Firebase conectado exitosamente");
+        } catch (e) {
+            console.error("Error conectando Firebase:", e);
+        }
+
+        // --- APLICACIÓN REACT ---
+        import React, { useState } from "https://esm.sh/react@18";
+        import ReactDOM from "https://esm.sh/react-dom@18";
+
+        const IconSun = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "5" }), React.createElement("path", { d: "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" }));
+        const IconMoon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" }));
+        const IconAlert = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "10" }), React.createElement("line", { x1: "12", y1: "8", x2: "12", y2: "12" }), React.createElement("line", { x1: "12", y1: "16", x2: "12.01", y2: "16" }));
 
         const ReporteApp = () => {
-            // Estado del formulario
+            const [darkMode, setDarkMode] = useState(false);
+            const [guardando, setGuardando] = useState(false);
             const [formData, setFormData] = useState({
                 responsable: 'Victor',
                 efectivo: '',
@@ -52,50 +81,75 @@
                 propinas: '',
                 gastos: '',
                 novedades: '',
-                diferencia: 0,
-                quiebres: [] // Array para guardar los items seleccionados
+                diferencia: 0
             });
+
+            const [stockCritico, setStockCritico] = useState([]);
+            const insumosBarra = ["Café Grano", "Leche Entera", "Leche Veg", "Vasos 8oz/12oz", "Hielo"];
+            const insumosCocina = ["Huevos", "Palta", "Pan Hogaza", "Queso", "Jamón"];
+            const insumosAseo = ["Nova/Papel", "Químicos", "Paños", "Bolsas"];
 
             const [showPreview, setShowPreview] = useState(false);
             const [copySuccess, setCopySuccess] = useState(false);
 
-            // Lista de insumos para el reporte de quiebres
-            const stockItems = {
-                Barra: ['Café Grano', 'Leche Entera', 'Leche Veg', 'Vasos 8oz/12oz'],
-                Cocina: ['Huevos', 'Palta', 'Pan Hogaza', 'Queso', 'Jamón'],
-                Aseo: ['Nova/Papel', 'Químicos', 'Paños']
-            };
-
-            // Cálculos automáticos
             const totalVenta = (Number(formData.efectivo) || 0) + (Number(formData.debito) || 0) + (Number(formData.credito) || 0) + (Number(formData.transferencias) || 0);
             const fechaHoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' });
 
-            // Manejador de inputs
             const handleChange = (e) => {
                 const { name, value } = e.target;
                 setFormData(prev => ({ ...prev, [name]: value }));
             };
 
-            // Manejador de toggles de stock
-            const toggleStockItem = (item) => {
-                setFormData(prev => {
-                    const newQuiebres = prev.quiebres.includes(item)
-                        ? prev.quiebres.filter(i => i !== item)
-                        : [...prev.quiebres, item];
-                    return { ...prev, quiebres: newQuiebres };
-                });
+            const toggleStock = (insumo) => {
+                if (stockCritico.includes(insumo)) {
+                    setStockCritico(stockCritico.filter(i => i !== insumo));
+                } else {
+                    setStockCritico([...stockCritico, insumo]);
+                }
             };
 
-            // Generador del Texto para WhatsApp (El Core del Negocio)
+            const handleProcess = async () => {
+                setGuardando(true);
+                try {
+                    if (db) {
+                        await addDoc(collection(db, "cierres"), {
+                            fecha: serverTimestamp(),
+                            fechaString: fechaHoy,
+                            responsable: formData.responsable,
+                            totalVenta: totalVenta,
+                            efectivo: Number(formData.efectivo) || 0,
+                            debito: Number(formData.debito) || 0,
+                            credito: Number(formData.credito) || 0,
+                            transferencias: Number(formData.transferencias) || 0,
+                            propinas: Number(formData.propinas) || 0,
+                            gastos: Number(formData.gastos) || 0,
+                            diferenciaCaja: Number(formData.diferencia) || 0,
+                            novedades: formData.novedades,
+                            stockFaltante: stockCritico
+                        });
+                        console.log("✅ Dato guardado en la nube");
+                    }
+                } catch (e) {
+                    console.error("❌ Error guardando:", e);
+                    alert("Error guardando en la nube. Revisa conexión.");
+                }
+
+                navigator.clipboard.writeText(generarTextoWhatsApp());
+                setGuardando(false);
+                setCopySuccess(true);
+                setTimeout(() => setCopySuccess(false), 3000);
+            };
+
             const generarTextoWhatsApp = () => {
                 const alertas = formData.diferencia != 0 ? `\n🚨 *Diferencia Caja:* $${Number(formData.diferencia).toLocaleString()}` : '';
                 const gastos = formData.gastos > 0 ? `\n🥷🏼 *Egresos:* $${Number(formData.gastos).toLocaleString()}` : '';
+
+                let stockMsg = "";
+                if (stockCritico.length > 0) {
+                    stockMsg = `\n⚠️ *FALTA COMPRAR:*\n${stockCritico.map(i => `- ${i}`).join('\n')}`;
+                }
+
                 const novedades = formData.novedades ? `\n📝 *Novedades:* ${formData.novedades}` : '';
-                
-                // Lógica para reporte de quiebres
-                const reporteQuiebres = formData.quiebres.length > 0 
-                    ? `\n⚠️ FALTA COMPRAR: ${formData.quiebres.join(', ')}` 
-                    : '';
 
                 return `*📅 Informe ${fechaHoy} - ${formData.responsable}*
 
@@ -106,173 +160,102 @@
 💸 Efectivo: $${Number(formData.efectivo).toLocaleString()}
 📱 Transf: $${Number(formData.transferencias).toLocaleString()}
 
-🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}${reporteQuiebres}
+🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}${stockMsg}
 ${novedades}
 
 👋🏻 ¡Cierre enviado desde App Coete!`;
             };
 
-            const handleCopy = () => {
-                navigator.clipboard.writeText(generarTextoWhatsApp());
-                setCopySuccess(true);
-                setTimeout(() => setCopySuccess(false), 2000);
-            };
-
-            return (
-                <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl overflow-hidden flex flex-col">
-
-                    {/* Header */}
-                    <header className="bg-slate-900 text-white p-6 pb-8 sticky top-0 z-10">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h1 className="text-xl font-bold">Cierre de Turno</h1>
-                                <p className="text-slate-400 text-xs uppercase tracking-wider">Sistema Operativo Coete 2.1</p>
-                            </div>
-                            <div className="h-8 w-8 bg-[#ff6b00] rounded-lg flex items-center justify-center font-bold">C</div>
-                        </div>
-                    </header>
-
-                    {/* Contenido Principal */}
-                    <div className="flex-1 p-6 -mt-4 bg-white rounded-t-3xl overflow-y-auto">
-
-                        {!showPreview ? (
-                            <div className="space-y-5 fade-in">
-                                {/* Sección 1: Responsable */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsable</label>
-                                    <select
-                                        name="responsable"
-                                        value={formData.responsable}
-                                        onChange={handleChange}
-                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:border-[#ff6b00]"
-                                    >
-                                        <option>Victor</option>
-                                        <option>Loreto</option>
-                                        <option>Agus</option>
-                                        <option>Otro</option>
-                                    </select>
-                                </div>
-
-                                {/* Sección 2: Platas */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Débito (Redcompra)</label>
-                                        <input type="number" name="debito" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Crédito</label>
-                                        <input type="number" name="credito" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Efectivo Caja</label>
-                                        <input type="number" name="efectivo" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Transferencias</label>
-                                        <input type="number" name="transferencias" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                </div>
-
-                                {/* Sección 3: Gastos y Propinas */}
-                                <div className="p-4 bg-orange-50 rounded-xl border border-orange-100 space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-orange-800 uppercase mb-1">Propinas del Día</label>
-                                        <input type="number" name="propinas" placeholder="$0" className="w-full p-3 bg-white border border-orange-200 rounded-xl font-mono focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-orange-800 uppercase mb-1">Gastos / Egresos (Caja chica)</label>
-                                        <input type="number" name="gastos" placeholder="$0" className="w-full p-3 bg-white border border-orange-200 rounded-xl font-mono focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
-                                    </div>
-                                </div>
-
-                                {/* Sección 4: Diferencias */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Diferencia de Caja (+/-)</label>
-                                    <input type="number" name="diferencia" placeholder="0" className={`w-full p-3 border rounded-xl font-mono focus:outline-none ${formData.diferencia != 0 ? 'bg-red-50 border-red-300 text-red-600' : 'bg-slate-50 border-slate-200'}`} onChange={handleChange} />
-                                    <p className="text-[10px] text-slate-400 mt-1">Si sobra pon positivo, si falta negativo.</p>
-                                </div>
-
-                                {/* Sección 5: Reporte de Quiebres */}
-                                <div className="border-t border-slate-100 pt-4">
-                                    <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <span>🚨</span> Reporte de Quiebres
-                                    </h3>
-                                    <div className="space-y-3">
-                                        {Object.entries(stockItems).map(([categoria, items]) => (
-                                            <div key={categoria}>
-                                                <p className="text-xs font-semibold text-slate-400 uppercase mb-2">{categoria}</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {items.map(item => (
-                                                        <button
-                                                            key={item}
-                                                            onClick={() => toggleStockItem(item)}
-                                                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors border ${
-                                                                formData.quiebres.includes(item)
-                                                                    ? 'bg-red-500 text-white border-red-600'
-                                                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                                                            }`}
-                                                        >
-                                                            {item}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Sección 6: Novedades */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Novedades / Alertas</label>
-                                    <textarea name="novedades" rows="3" placeholder="Ej: Se acabó el pan, falló internet..." className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#ff6b00]" onChange={handleChange}></textarea>
-                                </div>
-
-                                <button
-                                    onClick={() => setShowPreview(true)}
-                                    className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
-                                >
-                                    Revisar Cierre
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="fade-in h-full flex flex-col">
-                                <h2 className="font-bold text-lg mb-4 text-slate-700">Vista Previa</h2>
-
-                                {/* Simulación de Burbuja de WhatsApp */}
-                                <div className="bg-[#dcf8c6] p-4 rounded-lg rounded-tl-none shadow-sm text-sm text-slate-800 font-sans whitespace-pre-wrap leading-relaxed border border-green-200 relative">
-                                    {generarTextoWhatsApp()}
-                                    <div className="absolute -left-2 top-0 w-0 h-0 border-t-[10px] border-t-[#dcf8c6] border-l-[10px] border-l-transparent"></div>
-                                </div>
-
-                                <div className="mt-auto space-y-3 pt-6">
-                                    <button
-                                        onClick={handleCopy}
-                                        className={`w-full py-4 rounded-xl font-bold shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 ${copySuccess ? 'bg-green-500 text-white' : 'bg-[#25D366] text-white'}`}
-                                    >
-                                        {copySuccess ? (
-                                            <>Copiado con éxito <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></>
-                                        ) : (
-                                            <>Copiar para WhatsApp <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></>
-                                        )}
-                                    </button>
-
-                                    <button
-                                        onClick={() => setShowPreview(false)}
-                                        className="w-full py-3 bg-white text-slate-500 rounded-xl font-bold border border-slate-200 active:bg-slate-50"
-                                    >
-                                        Volver / Editar
-                                    </button>
-                                </div>
-                                <p className="text-center text-[10px] text-slate-400 mt-4">Al copiar, los datos se guardan en el sistema.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
+            return React.createElement("div", { className: `max-w-md mx-auto min-h-screen shadow-xl overflow-hidden flex flex-col transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-800'}` },
+                React.createElement("header", { className: `p-6 pb-8 sticky top-0 z-10 flex justify-between items-center ${darkMode ? 'bg-slate-800 text-white' : 'bg-slate-900 text-white'}` },
+                    React.createElement("div", null,
+                        React.createElement("h1", { className: "text-xl font-bold" }, "Cierre de Turno"),
+                        React.createElement("p", { className: "text-slate-400 text-xs uppercase tracking-wider" }, "Sistema Operativo Coete 2.1")
+                    ),
+                    React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-white/10 hover:bg-white/20 transition" },
+                        darkMode ? React.createElement(IconSun) : React.createElement(IconMoon)
+                    )
+                ),
+                React.createElement("div", { className: `flex-1 p-6 -mt-4 rounded-t-3xl overflow-y-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}` },
+                    !showPreview ? (
+                        React.createElement("div", { className: "space-y-5 fade-in" },
+                            React.createElement("div", null,
+                                React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Responsable"),
+                                React.createElement("select", { name: "responsable", value: formData.responsable, onChange: handleChange, className: `w-full p-3 border rounded-xl font-medium focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}` },
+                                    ["Victor", "Loreto", "Agus", "Matias", "Otro"].map(op => React.createElement("option", { key: op }, op))
+                                )
+                            ),
+                            React.createElement("div", { className: "grid grid-cols-2 gap-4" },
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Débito (Redcompra)"),
+                                    React.createElement("input", { type: "number", name: "debito", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Crédito"),
+                                    React.createElement("input", { type: "number", name: "credito", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Efectivo Caja"),
+                                    React.createElement("input", { type: "number", name: "efectivo", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Transferencias"),
+                                    React.createElement("input", { type: "number", name: "transferencias", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
+                                )
+                            ),
+                            React.createElement("div", { className: `p-4 rounded-xl border space-y-4 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-orange-50 border-orange-100'}` },
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-orange-400' : 'text-orange-800'}` }, "Propinas del Día"),
+                                    React.createElement("input", { type: "number", name: "propinas", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-orange-200'}`, onChange: handleChange })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-orange-400' : 'text-orange-800'}` }, "Gastos / Egresos"),
+                                    React.createElement("input", { type: "number", name: "gastos", placeholder: "$0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-orange-200'}`, onChange: handleChange })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-orange-400' : 'text-orange-800'}` }, "Diferencia Caja (+/-)"),
+                                    React.createElement("input", { type: "number", name: "diferencia", placeholder: "0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none ${formData.diferencia != 0 ? 'bg-red-500/20 text-red-500 border-red-500' : darkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-orange-200'}`, onChange: handleChange })
+                                )
+                            ),
+                            React.createElement("div", null,
+                                React.createElement("label", { className: `block text-xs font-bold uppercase mb-2 flex items-center gap-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, React.createElement(IconAlert), " Reporte de Quiebres"),
+                                React.createElement("div", { className: "space-y-3" },
+                                    React.createElement("div", null,
+                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Barra"),
+                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosBarra.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                    ),
+                                    React.createElement("div", null,
+                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Cocina"),
+                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosCocina.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                    ),
+                                    React.createElement("div", null,
+                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Aseo"),
+                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosAseo.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                    )
+                                )
+                            ),
+                            React.createElement("div", null,
+                                React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Novedades / Alertas"),
+                                React.createElement("textarea", { name: "novedades", rows: "2", placeholder: "Ej: Se cortó la luz...", className: `w-full p-3 border rounded-xl focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
+                            ),
+                            React.createElement("button", { onClick: () => setShowPreview(true), className: "w-full py-4 bg-slate-900 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2" }, "Revisar Cierre")
+                        )
+                    ) : (
+                        React.createElement("div", { className: "fade-in h-full flex flex-col" },
+                            React.createElement("h2", { className: `font-bold text-lg mb-4 ${darkMode ? 'text-white' : 'text-slate-700'}` }, "Vista Previa"),
+                            React.createElement("div", { className: "bg-[#dcf8c6] p-4 rounded-lg rounded-tl-none shadow-sm text-sm text-slate-800 font-sans whitespace-pre-wrap leading-relaxed border border-green-200 relative" }, generarTextoWhatsApp()),
+                            React.createElement("div", { className: "mt-auto space-y-3 pt-6" },
+                                React.createElement("button", { onClick: handleProcess, disabled: guardando, className: `w-full py-4 rounded-xl font-bold shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 ${copySuccess ? 'bg-green-500 text-white' : 'bg-[#25D366] text-white'}` }, guardando ? "Guardando en Nube..." : copySuccess ? "¡Copiado y Guardado!" : "Copiar para WhatsApp + Guardar"),
+                                React.createElement("button", { onClick: () => setShowPreview(false), className: `w-full py-3 rounded-xl font-bold border active:scale-95 ${darkMode ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-500 border-slate-200'}` }, "Volver / Editar")
+                            )
+                        )
+                    )
+                )
             );
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ReporteApp />);
+        root.render(React.createElement(ReporteApp));
     </script>
 </body>
 

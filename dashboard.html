@@ -4,23 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Coete - Dashboard Operativo</title>
-
-    <!-- Tailwind CSS -->
+    <title>Coete - Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- React & ReactDOM -->
+    <!-- React y Babel para que funcione en el navegador sin compilar -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Fuente Inter y Roboto Mono para números -->
+    <!-- Fuentes -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Roboto+Mono:wght@500&display=swap"
         rel="stylesheet">
-
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -30,168 +23,148 @@
         .font-mono {
             font-family: 'Roboto Mono', monospace;
         }
-
-        .animate-enter {
-            animation: enter 0.5s ease-out forwards;
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        @keyframes enter {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
     </style>
 </head>
 
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-50 text-slate-800 transition-colors duration-300">
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState } = React;
+    <script type="module">
+        // --- 1. IMPORTAR LIBRERÍAS DE FIREBASE (Versión Web Modular) ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-        // Iconos SVG simples
-        const IconTrendingUp = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>;
-        const IconAlert = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>;
-        const IconDollar = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>;
-        const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
+        // --- 2. TU CONFIGURACIÓN DE FIREBASE (YA INSERTADA) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDIfYedJ-S-fvVeRHRq3o-BEv0es_EUH9U",
+            authDomain: "coete-system.firebaseapp.com",
+            projectId: "coete-system",
+            storageBucket: "coete-system.firebasestorage.app",
+            messagingSenderId: "139946462232",
+            appId: "1:139946462232:web:fcc25397ebaac8c10cc76d"
+        };
+
+        // Inicializar la conexión
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("🔥 Dashboard conectado a Firebase");
+        } catch (e) {
+            console.error("Error conectando Firebase:", e);
+        }
+
+        // --- 3. APLICACIÓN REACT (DASHBOARD) ---
+        import React, { useState, useEffect } from "https://esm.sh/react@18";
+        import ReactDOM from "https://esm.sh/react-dom@18";
 
         const Dashboard = () => {
-            // Datos reales del chat
-            const stats = {
-                ventaSemanal: 2804190,
-                ticketPromedio: 8450,
-                diferenciaCaja: -2240
-            };
+            const [darkMode, setDarkMode] = useState(false);
+            const [data, setData] = useState([]); // Aquí guardaremos los datos de los gráficos
+            const [stats, setStats] = useState({ ventaSemanal: 0, ticketPromedio: 0, diferenciaCaja: 0 });
+            const [loading, setLoading] = useState(true);
 
-            const chartData = [
-                { day: 'Lun', val: 409, height: '65%' },
-                { day: 'Mar', val: 532, height: '85%' },
-                { day: 'Mié', val: 554, height: '90%' },
-                { day: 'Jue', val: 478, height: '75%' },
-                { day: 'Vie', val: 474, height: '74%' },
-                { day: 'Sáb', val: 306, height: '50%' },
-                { day: 'Dom', val: 47, height: '15%', alert: true }, // Corte de luz
-            ];
+            // Efecto: Se ejecuta al abrir la página para traer datos
+            useEffect(() => {
+                const fetchData = async () => {
+                    if (!db) return; // Si no hay base de datos, no hacemos nada
 
-            const alerts = [
-                { id: 1, title: "Diferencia Caja (Mié 05)", desc: "Faltante de -$2,240 reportado en cierre AM.", type: "danger" },
-                { id: 2, title: "Stock Crítico", desc: "Quedan solo 4 cuartos de café Brasil. Reponer urgente.", type: "warning" },
-                { id: 3, title: "Incidente Infraestructura", desc: "Corte de luz Dom 09 afectó venta (-80% vs prom).", type: "info" }
-            ];
+                    try {
+                        // Consulta: Trae la colección "cierres", ordenada por fecha (más reciente primero), máximo 7
+                        const q = query(collection(db, "cierres"), orderBy("fecha", "desc"), limit(7));
+                        const querySnapshot = await getDocs(q);
 
-            return (
-                <div className="max-w-md mx-auto min-h-screen bg-[#f8fafc] pb-10">
+                        const cierres = [];
+                        let totalVenta = 0;
+                        let totalDiferencia = 0;
 
-                    {/* Header Ejecutivo */}
-                    <header className="bg-white px-6 pt-8 pb-6 border-b border-slate-200 sticky top-0 z-10">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h1 className="text-xl font-bold text-slate-800 tracking-tight">Panel de Control</h1>
-                                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">Coete 2 • Sem 1 Nov</p>
-                            </div>
-                            <div className="h-8 w-8 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200">
-                                <span className="font-bold text-slate-600 text-xs">MA</span>
-                            </div>
-                        </div>
-                    </header>
+                        // Procesamos cada cierre que llegó
+                        querySnapshot.forEach((doc) => {
+                            const d = doc.data();
+                            cierres.push(d);
+                            totalVenta += Number(d.totalVenta) || 0;
+                            totalDiferencia += Number(d.diferenciaCaja) || 0;
+                        });
 
-                    <div className="p-6 space-y-6">
+                        // Preparamos los datos para el gráfico (Invertimos para que sea Cronológico: Lun -> Dom)
+                        const chartData = cierres.reverse().map(c => ({
+                            day: c.fechaString ? c.fechaString.split('-')[0] : '?', // Solo el día (ej: "01")
+                            val: Math.round(c.totalVenta / 1000), // Valor en miles para que quepa en la barrita
+                            height: Math.min(100, (c.totalVenta / 600000) * 100) + '%' // Altura visual relativa a una meta de 600k
+                        }));
 
-                        {/* KPI Cards Grid */}
-                        <div className="grid grid-cols-2 gap-3">
-                            {/* Card Venta */}
-                            <div className="col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 animate-enter" style={{ animationDelay: '0ms' }}>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <div className="p-1.5 bg-green-50 text-green-600 rounded-lg">
-                                        <IconDollar />
-                                    </div>
-                                    <span className="text-sm font-semibold text-slate-500">Venta Total Semana</span>
-                                </div>
-                                <div className="text-3xl font-bold text-slate-800 font-mono tracking-tight">
-                                    ${stats.ventaSemanal.toLocaleString('es-CL')}
-                                </div>
-                                <div className="mt-2 flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 w-fit px-2 py-1 rounded-full">
-                                    <IconTrendingUp /> +12% vs sem anterior
-                                </div>
-                            </div>
+                        setData(chartData);
+                        setStats({
+                            ventaSemanal: totalVenta,
+                            // Ticket promedio estimado (asumiendo ticket de $5.000 aprox, o dividiendo por # transacciones si tuviéramos)
+                            // Aquí hacemos un estimado simple dividiendo por una constante para mostrar algo
+                            ticketPromedio: cierres.length > 0 ? Math.round(totalVenta / (cierres.length * 40)) : 0,
+                            diferenciaCaja: totalDiferencia
+                        });
+                        setLoading(false);
 
-                            {/* Card Ticket */}
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 animate-enter" style={{ animationDelay: '100ms' }}>
-                                <p className="text-xs font-semibold text-slate-400 mb-1">Ticket Prom.</p>
-                                <p className="text-xl font-bold text-slate-800 font-mono">${stats.ticketPromedio.toLocaleString()}</p>
-                            </div>
+                    } catch (e) {
+                        console.error("Error trayendo datos:", e);
+                        setLoading(false);
+                    }
+                };
+                fetchData();
+            }, []);
 
-                            {/* Card Diferencia */}
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 animate-enter" style={{ animationDelay: '200ms' }}>
-                                <p className="text-xs font-semibold text-slate-400 mb-1">Diferencias</p>
-                                <p className={`text-xl font-bold font-mono ${stats.diferenciaCaja < 0 ? 'text-red-500' : 'text-green-500'}`}>
-                                    {stats.diferenciaCaja.toLocaleString()}
-                                </p>
-                            </div>
-                        </div>
+            return React.createElement("div", { className: `max-w-md mx-auto min-h-screen pb-10 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-[#f8fafc] text-slate-800'}` },
 
-                        {/* Gráfico Visual (CSS Puro) */}
-                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 animate-enter" style={{ animationDelay: '300ms' }}>
-                            <div className="flex justify-between items-end mb-4">
-                                <h3 className="font-bold text-slate-700">Ventas Diarias (x$1.000)</h3>
-                                <span className="text-[10px] text-slate-400">Meta diaria: $450k</span>
-                            </div>
+                // Header
+                React.createElement("header", { className: `px-6 pt-8 pb-6 border-b sticky top-0 z-10 flex justify-between items-start ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}` },
+                    React.createElement("div", null,
+                        React.createElement("h1", { className: "text-xl font-bold tracking-tight" }, "Panel de Control"),
+                        React.createElement("p", { className: "text-xs font-medium uppercase tracking-wider mt-1 text-slate-500" }, loading ? "Sincronizando..." : "Datos en Tiempo Real")
+                    ),
+                    React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-orange-500" }, darkMode ? "☀️" : "🌙")
+                ),
 
-                            <div className="flex items-end justify-between h-40 gap-2 pt-4 border-b border-slate-100 pb-2">
-                                {chartData.map((d, i) => (
-                                    <div key={i} className="flex flex-col items-center gap-2 w-full h-full justify-end group">
-                                        <div className="relative w-full flex justify-center items-end h-full">
-                                            {/* Barra */}
-                                            <div
-                                                className={`w-full max-w-[24px] rounded-t-md transition-all duration-1000 ease-out ${d.alert ? 'bg-red-400' : 'bg-[#ff6b00]'}`}
-                                                style={{ height: d.height }}
-                                            ></div>
-                                            {/* Tooltip simple */}
-                                            <div className="absolute -top-8 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 font-mono">
-                                                ${d.val}k
-                                            </div>
-                                        </div>
-                                        <span className="text-[10px] font-bold text-slate-400">{d.day}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                // Contenido Principal
+                React.createElement("div", { className: "p-6 space-y-6" },
 
-                        {/* Sección Alertas */}
-                        <div className="animate-enter" style={{ animationDelay: '400ms' }}>
-                            <h3 className="font-bold text-slate-700 mb-3 ml-1">Alertas Operativas</h3>
-                            <div className="space-y-3">
-                                {alerts.map((alert) => (
-                                    <div key={alert.id} className={`p-4 rounded-xl border-l-4 shadow-sm bg-white ${alert.type === 'danger' ? 'border-red-500' :
-                                            alert.type === 'warning' ? 'border-yellow-500' : 'border-blue-400'
-                                        }`}>
-                                        <div className="flex justify-between items-start mb-1">
-                                            <h4 className={`text-sm font-bold ${alert.type === 'danger' ? 'text-red-600' :
-                                                    alert.type === 'warning' ? 'text-yellow-600' : 'text-blue-600'
-                                                }`}>{alert.title}</h4>
-                                            <IconAlert />
-                                        </div>
-                                        <p className="text-xs text-slate-500 leading-relaxed">{alert.desc}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                    // Tarjetas de KPI (Indicadores Clave)
+                    React.createElement("div", { className: "grid grid-cols-2 gap-3" },
+                        // Venta Total (Ocupa 2 columnas)
+                        React.createElement("div", { className: `col-span-2 p-5 rounded-2xl shadow-sm border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                            React.createElement("p", { className: "text-sm font-semibold text-slate-500 mb-2" }, "Venta Acumulada (Últimos 7)"),
+                            React.createElement("div", { className: "text-3xl font-bold font-mono tracking-tight" }, loading ? "..." : `$${stats.ventaSemanal.toLocaleString('es-CL')}`)
+                        ),
+                        // Diferencias de Caja
+                        React.createElement("div", { className: `p-4 rounded-2xl shadow-sm border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                            React.createElement("p", { className: "text-xs font-semibold text-slate-400 mb-1" }, "Diferencias Caja"),
+                            React.createElement("p", { className: `text-xl font-bold font-mono ${stats.diferenciaCaja < 0 ? 'text-red-500' : 'text-green-500'}` }, loading ? "..." : stats.diferenciaCaja.toLocaleString())
+                        ),
+                        // Ticket Promedio (Estimado)
+                        React.createElement("div", { className: `p-4 rounded-2xl shadow-sm border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                            React.createElement("p", { className: "text-xs font-semibold text-slate-400 mb-1" }, "Ticket Prom (Est)"),
+                            React.createElement("p", { className: "text-xl font-bold font-mono" }, loading ? "..." : `$${stats.ticketPromedio.toLocaleString()}`)
+                        )
+                    ),
 
-                        {/* Botón Acción */}
-                        <button className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg shadow-slate-200/50 active:scale-95 transition-transform mt-4">
-                            Generar Reporte PDF
-                        </button>
+                    // Gráfico de Barras
+                    React.createElement("div", { className: `p-5 rounded-2xl shadow-sm border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                        React.createElement("h3", { className: "font-bold mb-4" }, "Evolución de Ventas"),
 
-                    </div>
-                </div>
+                        loading ? React.createElement("p", { className: "text-center py-10 text-slate-400" }, "Cargando gráfico...") :
+
+                            React.createElement("div", { className: "flex items-end justify-between h-40 gap-2 pt-4 border-b border-slate-100 pb-2" },
+                                data.length > 0 ? data.map((d, i) => React.createElement("div", { key: i, className: "flex flex-col items-center gap-2 w-full h-full justify-end" },
+                                    // La Barra
+                                    React.createElement("div", { className: "w-full max-w-[24px] bg-[#ff6b00] rounded-t-md transition-all duration-1000", style: { height: d.height } }),
+                                    // El Día
+                                    React.createElement("span", { className: "text-[10px] font-bold text-slate-400" }, d.day)
+                                )) : React.createElement("p", { className: "text-xs text-slate-400 w-full text-center" }, "Sin datos aún. ¡Haz un cierre para ver magia!")
+                            )
+                    )
+                )
             );
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<Dashboard />);
+        root.render(React.createElement(Dashboard));
     </script>
 </body>
 
