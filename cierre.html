@@ -46,19 +46,28 @@
             const [formData, setFormData] = useState({
                 responsable: 'Victor',
                 efectivo: '',
-                tarjetas: '',
+                debito: '',
+                credito: '',
                 transferencias: '',
                 propinas: '',
                 gastos: '',
                 novedades: '',
-                diferencia: 0
+                diferencia: 0,
+                quiebres: [] // Array para guardar los items seleccionados
             });
 
             const [showPreview, setShowPreview] = useState(false);
             const [copySuccess, setCopySuccess] = useState(false);
 
+            // Lista de insumos para el reporte de quiebres
+            const stockItems = {
+                Barra: ['Café Grano', 'Leche Entera', 'Leche Veg', 'Vasos 8oz/12oz'],
+                Cocina: ['Huevos', 'Palta', 'Pan Hogaza', 'Queso', 'Jamón'],
+                Aseo: ['Nova/Papel', 'Químicos', 'Paños']
+            };
+
             // Cálculos automáticos
-            const totalVenta = (Number(formData.efectivo) || 0) + (Number(formData.tarjetas) || 0) + (Number(formData.transferencias) || 0);
+            const totalVenta = (Number(formData.efectivo) || 0) + (Number(formData.debito) || 0) + (Number(formData.credito) || 0) + (Number(formData.transferencias) || 0);
             const fechaHoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' });
 
             // Manejador de inputs
@@ -67,21 +76,37 @@
                 setFormData(prev => ({ ...prev, [name]: value }));
             };
 
+            // Manejador de toggles de stock
+            const toggleStockItem = (item) => {
+                setFormData(prev => {
+                    const newQuiebres = prev.quiebres.includes(item)
+                        ? prev.quiebres.filter(i => i !== item)
+                        : [...prev.quiebres, item];
+                    return { ...prev, quiebres: newQuiebres };
+                });
+            };
+
             // Generador del Texto para WhatsApp (El Core del Negocio)
             const generarTextoWhatsApp = () => {
                 const alertas = formData.diferencia != 0 ? `\n🚨 *Diferencia Caja:* $${Number(formData.diferencia).toLocaleString()}` : '';
                 const gastos = formData.gastos > 0 ? `\n🥷🏼 *Egresos:* $${Number(formData.gastos).toLocaleString()}` : '';
                 const novedades = formData.novedades ? `\n📝 *Novedades:* ${formData.novedades}` : '';
+                
+                // Lógica para reporte de quiebres
+                const reporteQuiebres = formData.quiebres.length > 0 
+                    ? `\n⚠️ FALTA COMPRAR: ${formData.quiebres.join(', ')}` 
+                    : '';
 
                 return `*📅 Informe ${fechaHoy} - ${formData.responsable}*
 
 💵 *Venta Total:* $${totalVenta.toLocaleString()}
 ------------------
-💳 Tarjetas: $${Number(formData.tarjetas).toLocaleString()}
+💳 Débito: $${Number(formData.debito).toLocaleString()}
+💳 Crédito: $${Number(formData.credito).toLocaleString()}
 💸 Efectivo: $${Number(formData.efectivo).toLocaleString()}
 📱 Transf: $${Number(formData.transferencias).toLocaleString()}
 
-🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}
+🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}${reporteQuiebres}
 ${novedades}
 
 👋🏻 ¡Cierre enviado desde App Coete!`;
@@ -101,7 +126,7 @@ ${novedades}
                         <div className="flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold">Cierre de Turno</h1>
-                                <p className="text-slate-400 text-xs uppercase tracking-wider">Sistema Operativo Coete 2</p>
+                                <p className="text-slate-400 text-xs uppercase tracking-wider">Sistema Operativo Coete 2.1</p>
                             </div>
                             <div className="h-8 w-8 bg-[#ff6b00] rounded-lg flex items-center justify-center font-bold">C</div>
                         </div>
@@ -130,9 +155,13 @@ ${novedades}
 
                                 {/* Sección 2: Platas */}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="col-span-2">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Total Tarjetas (Toteat)</label>
-                                        <input type="number" name="tarjetas" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Débito (Redcompra)</label>
+                                        <input type="number" name="debito" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Crédito</label>
+                                        <input type="number" name="credito" placeholder="$0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-lg focus:outline-none focus:border-[#ff6b00]" onChange={handleChange} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Efectivo Caja</label>
@@ -156,13 +185,43 @@ ${novedades}
                                     </div>
                                 </div>
 
-                                {/* Sección 4: Diferencias y Novedades */}
+                                {/* Sección 4: Diferencias */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Diferencia de Caja (+/-)</label>
                                     <input type="number" name="diferencia" placeholder="0" className={`w-full p-3 border rounded-xl font-mono focus:outline-none ${formData.diferencia != 0 ? 'bg-red-50 border-red-300 text-red-600' : 'bg-slate-50 border-slate-200'}`} onChange={handleChange} />
                                     <p className="text-[10px] text-slate-400 mt-1">Si sobra pon positivo, si falta negativo.</p>
                                 </div>
 
+                                {/* Sección 5: Reporte de Quiebres */}
+                                <div className="border-t border-slate-100 pt-4">
+                                    <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                        <span>🚨</span> Reporte de Quiebres
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {Object.entries(stockItems).map(([categoria, items]) => (
+                                            <div key={categoria}>
+                                                <p className="text-xs font-semibold text-slate-400 uppercase mb-2">{categoria}</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {items.map(item => (
+                                                        <button
+                                                            key={item}
+                                                            onClick={() => toggleStockItem(item)}
+                                                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                                                                formData.quiebres.includes(item)
+                                                                    ? 'bg-red-500 text-white border-red-600'
+                                                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                            {item}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Sección 6: Novedades */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Novedades / Alertas</label>
                                     <textarea name="novedades" rows="3" placeholder="Ej: Se acabó el pan, falló internet..." className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#ff6b00]" onChange={handleChange}></textarea>
