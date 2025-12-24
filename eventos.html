@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Coete - Eventos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800 transition-colors duration-300">
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDIfYedJ-S-fvVeRHRq3o-BEv0es_EUH9U",
+            authDomain: "coete-system.firebaseapp.com",
+            projectId: "coete-system",
+            storageBucket: "coete-system.firebasestorage.app",
+            messagingSenderId: "139946462232",
+            appId: "1:139946462232:web:fcc25397ebaac8c10cc76d"
+        };
+
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("🔥 Eventos conectado a Firebase");
+        } catch (e) {
+            console.error("Error conectando Firebase:", e);
+        }
+
+        import React, { useState, useEffect } from "https://esm.sh/react@18";
+        import ReactDOM from "https://esm.sh/react-dom@18";
+
+        const IconPlus = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("line", { x1: "12", y1: "5", x2: "12", y2: "19" }), React.createElement("line", { x1: "5", y1: "12", x2: "19", y2: "12" }));
+        const IconCalendar = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("rect", { x: "3", y: "4", width: "18", height: "18", rx: "2", ry: "2" }), React.createElement("line", { x1: "16", y1: "2", x2: "16", y2: "6" }), React.createElement("line", { x1: "8", y1: "2", x2: "8", y2: "6" }), React.createElement("line", { x1: "3", y1: "10", x2: "21", y2: "10" }));
+        const IconSun = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "5" }), React.createElement("path", { d: "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" }));
+        const IconMoon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" }));
+        const IconCopy = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), React.createElement("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" }));
+
+        const EventosApp = () => {
+            const [darkMode, setDarkMode] = useState(false);
+            const [eventos, setEventos] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showForm, setShowForm] = useState(false);
+            const [showCotizador, setShowCotizador] = useState(false);
+            const [filtro, setFiltro] = useState('activos');
+            const [formData, setFormData] = useState({
+                cliente: '',
+                telefono: '',
+                tipoEvento: 'Cumpleaños',
+                fecha: '',
+                horario: '',
+                personas: 10,
+                servicios: [],
+                notas: ''
+            });
+
+            const tiposEvento = ["Cumpleaños", "Corporativo", "Celebración", "Reunión Privada", "Coffee Break", "Brunch", "Otro"];
+            const serviciosDisponibles = [
+                { id: 'cafe', nombre: 'Barra de Café', precioBase: 3500 },
+                { id: 'pizza', nombre: 'Pizzas', precioBase: 9000 },
+                { id: 'brunch', nombre: 'Brunch Completo', precioBase: 12000 },
+                { id: 'dulces', nombre: 'Mesa Dulce', precioBase: 4000 },
+                { id: 'bebidas', nombre: 'Bebidas/Jugos', precioBase: 2500 },
+                { id: 'decoracion', nombre: 'Decoración Básica', precioBase: 50000, fijo: true },
+                { id: 'exclusividad', nombre: 'Exclusividad Local', precioBase: 150000, fijo: true }
+            ];
+
+            const estadosPipeline = [
+                { id: 'cotizado', label: '📝 Cotizado', color: 'bg-blue-500' },
+                { id: 'confirmado', label: '✅ Confirmado', color: 'bg-green-500' },
+                { id: 'ejecutado', label: '🎉 Ejecutado', color: 'bg-purple-500' },
+                { id: 'cobrado', label: '💰 Cobrado', color: 'bg-emerald-500' },
+                { id: 'cancelado', label: '❌ Cancelado', color: 'bg-red-500' }
+            ];
+
+            useEffect(() => {
+                fetchEventos();
+            }, []);
+
+            const fetchEventos = async () => {
+                if (!db) return;
+                try {
+                    const q = query(collection(db, "eventos"), orderBy("fechaCreacion", "desc"));
+                    const querySnapshot = await getDocs(q);
+                    const data = [];
+                    querySnapshot.forEach((doc) => {
+                        data.push({ id: doc.id, ...doc.data() });
+                    });
+                    setEventos(data);
+                    setLoading(false);
+                } catch (e) {
+                    console.error("Error cargando eventos:", e);
+                    setLoading(false);
+                }
+            };
+
+            const calcularTotal = () => {
+                let total = 0;
+                formData.servicios.forEach(sId => {
+                    const servicio = serviciosDisponibles.find(s => s.id === sId);
+                    if (servicio) {
+                        if (servicio.fijo) {
+                            total += servicio.precioBase;
+                        } else {
+                            total += servicio.precioBase * formData.personas;
+                        }
+                    }
+                });
+                return total;
+            };
+
+            const toggleServicio = (sId) => {
+                if (formData.servicios.includes(sId)) {
+                    setFormData({...formData, servicios: formData.servicios.filter(s => s !== sId)});
+                } else {
+                    setFormData({...formData, servicios: [...formData.servicios, sId]});
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!formData.cliente || !formData.fecha) {
+                    alert("Cliente y fecha son obligatorios");
+                    return;
+                }
+                try {
+                    await addDoc(collection(db, "eventos"), {
+                        ...formData,
+                        total: calcularTotal(),
+                        estado: 'cotizado',
+                        fechaCreacion: serverTimestamp()
+                    });
+                    setFormData({ cliente: '', telefono: '', tipoEvento: 'Cumpleaños', fecha: '', horario: '', personas: 10, servicios: [], notas: '' });
+                    setShowForm(false);
+                    setShowCotizador(false);
+                    fetchEventos();
+                } catch (e) {
+                    console.error("Error guardando:", e);
+                    alert("Error al guardar");
+                }
+            };
+
+            const cambiarEstado = async (id, nuevoEstado) => {
+                try {
+                    await updateDoc(doc(db, "eventos", id), { estado: nuevoEstado });
+                    fetchEventos();
+                } catch (e) {
+                    console.error("Error actualizando:", e);
+                }
+            };
+
+            const generarTextoCotizacion = (evento) => {
+                const serviciosTexto = evento.servicios.map(sId => {
+                    const s = serviciosDisponibles.find(x => x.id === sId);
+                    return s ? `• ${s.nombre}` : '';
+                }).join('\n');
+
+                return `*🎉 COTIZACIÓN EVENTO COETE*
+
+📅 *Fecha:* ${evento.fecha}
+⏰ *Horario:* ${evento.horario || 'Por definir'}
+👥 *Personas:* ${evento.personas}
+🎈 *Tipo:* ${evento.tipoEvento}
+
+*Servicios incluidos:*
+${serviciosTexto}
+
+💰 *TOTAL: $${Number(evento.total).toLocaleString()}*
+
+_Cotización válida por 7 días_
+📞 Confirmar al WhatsApp del local`;
+            };
+
+            const copiarCotizacion = (evento) => {
+                navigator.clipboard.writeText(generarTextoCotizacion(evento));
+                alert("¡Cotización copiada!");
+            };
+
+            const eventosFiltrados = eventos.filter(e => {
+                if (filtro === 'activos') return !['cobrado', 'cancelado'].includes(e.estado);
+                if (filtro === 'cerrados') return ['cobrado', 'cancelado'].includes(e.estado);
+                return true;
+            });
+
+            const stats = {
+                cotizados: eventos.filter(e => e.estado === 'cotizado').length,
+                confirmados: eventos.filter(e => e.estado === 'confirmado').length,
+                ingresosPotenciales: eventos.filter(e => e.estado === 'confirmado').reduce((sum, e) => sum + (e.total || 0), 0)
+            };
+
+            return React.createElement("div", { className: `max-w-md mx-auto min-h-screen shadow-xl overflow-hidden flex flex-col transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-800'}` },
+                
+                // Header
+                React.createElement("header", { className: `p-6 pb-8 sticky top-0 z-10 flex justify-between items-center ${darkMode ? 'bg-slate-800 text-white' : 'bg-slate-900 text-white'}` },
+                    React.createElement("div", null,
+                        React.createElement("h1", { className: "text-xl font-bold flex items-center gap-2" }, React.createElement(IconCalendar), "Eventos"),
+                        React.createElement("p", { className: "text-slate-400 text-xs uppercase tracking-wider" }, "Cotizador & Pipeline")
+                    ),
+                    React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-white/10 hover:bg-white/20 transition" },
+                        darkMode ? React.createElement(IconSun) : React.createElement(IconMoon)
+                    )
+                ),
+
+                // Contenido
+                React.createElement("div", { className: `flex-1 p-6 -mt-4 rounded-t-3xl overflow-y-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}` },
+                    
+                    // Stats
+                    React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-6" },
+                        React.createElement("div", { className: `p-3 rounded-xl text-center ${darkMode ? 'bg-slate-800' : 'bg-blue-50'}` },
+                            React.createElement("p", { className: "text-2xl font-bold text-blue-500" }, stats.cotizados),
+                            React.createElement("p", { className: "text-[10px] font-bold text-blue-400 uppercase" }, "Cotizados")
+                        ),
+                        React.createElement("div", { className: `p-3 rounded-xl text-center ${darkMode ? 'bg-slate-800' : 'bg-green-50'}` },
+                            React.createElement("p", { className: "text-2xl font-bold text-green-500" }, stats.confirmados),
+                            React.createElement("p", { className: "text-[10px] font-bold text-green-400 uppercase" }, "Confirmados")
+                        ),
+                        React.createElement("div", { className: `p-3 rounded-xl text-center col-span-1 ${darkMode ? 'bg-slate-800' : 'bg-emerald-50'}` },
+                            React.createElement("p", { className: "text-lg font-bold text-emerald-500 font-mono" }, `$${(stats.ingresosPotenciales/1000).toFixed(0)}k`),
+                            React.createElement("p", { className: "text-[10px] font-bold text-emerald-400 uppercase" }, "Potencial")
+                        )
+                    ),
+
+                    // Filtros
+                    React.createElement("div", { className: "flex gap-2 mb-4" },
+                        ['activos', 'cerrados', 'todos'].map(f => 
+                            React.createElement("button", { 
+                                key: f, 
+                                onClick: () => setFiltro(f),
+                                className: `px-4 py-2 rounded-full text-xs font-bold transition-all ${filtro === f ? 'bg-[#ff6b00] text-white' : darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`
+                            }, f.charAt(0).toUpperCase() + f.slice(1))
+                        )
+                    ),
+
+                    // Lista
+                    loading ? 
+                        React.createElement("p", { className: "text-center py-10 text-slate-400" }, "Cargando...") :
+                        React.createElement("div", { className: "space-y-3" },
+                            eventosFiltrados.length === 0 ? 
+                                React.createElement("p", { className: "text-center py-10 text-slate-400 text-sm" }, "No hay eventos en esta categoría") :
+                                eventosFiltrados.map(evento => {
+                                    const estadoInfo = estadosPipeline.find(e => e.id === evento.estado) || estadosPipeline[0];
+                                    return React.createElement("div", { 
+                                        key: evento.id, 
+                                        className: `p-4 rounded-xl border transition-all fade-in ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`
+                                    },
+                                        React.createElement("div", { className: "flex justify-between items-start mb-2" },
+                                            React.createElement("div", null,
+                                                React.createElement("p", { className: "font-bold" }, evento.cliente),
+                                                React.createElement("p", { className: "text-xs text-slate-400" }, `${evento.tipoEvento} • ${evento.personas} personas`)
+                                            ),
+                                            React.createElement("span", { className: `text-[10px] font-bold px-2 py-1 rounded-full text-white ${estadoInfo.color}` }, estadoInfo.label)
+                                        ),
+                                        React.createElement("div", { className: "flex justify-between items-center mb-3" },
+                                            React.createElement("p", { className: "text-sm text-[#ff6b00] font-bold" }, `📅 ${evento.fecha}`),
+                                            React.createElement("p", { className: "font-bold font-mono text-lg" }, `$${Number(evento.total).toLocaleString()}`)
+                                        ),
+                                        React.createElement("div", { className: "flex gap-2 flex-wrap" },
+                                            evento.estado === 'cotizado' && React.createElement("button", { 
+                                                onClick: () => copiarCotizacion(evento),
+                                                className: "px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full flex items-center gap-1"
+                                            }, React.createElement(IconCopy), "Copiar"),
+                                            evento.estado === 'cotizado' && React.createElement("button", { 
+                                                onClick: () => cambiarEstado(evento.id, 'confirmado'),
+                                                className: "px-3 py-1 bg-green-500 text-white text-xs font-bold rounded-full"
+                                            }, "Confirmar"),
+                                            evento.estado === 'confirmado' && React.createElement("button", { 
+                                                onClick: () => cambiarEstado(evento.id, 'ejecutado'),
+                                                className: "px-3 py-1 bg-purple-500 text-white text-xs font-bold rounded-full"
+                                            }, "Ejecutado"),
+                                            evento.estado === 'ejecutado' && React.createElement("button", { 
+                                                onClick: () => cambiarEstado(evento.id, 'cobrado'),
+                                                className: "px-3 py-1 bg-emerald-500 text-white text-xs font-bold rounded-full"
+                                            }, "Cobrado"),
+                                            !['cobrado', 'cancelado'].includes(evento.estado) && React.createElement("button", { 
+                                                onClick: () => cambiarEstado(evento.id, 'cancelado'),
+                                                className: "px-3 py-1 bg-red-100 text-red-500 text-xs font-bold rounded-full"
+                                            }, "Cancelar")
+                                        )
+                                    );
+                                })
+                        ),
+
+                    // Formulario Cotizador
+                    showForm && React.createElement("div", { className: `fixed inset-0 bg-black/50 z-50 flex items-end` },
+                        React.createElement("div", { className: `w-full max-w-md mx-auto p-6 rounded-t-3xl max-h-[90vh] overflow-y-auto ${darkMode ? 'bg-slate-800' : 'bg-white'}` },
+                            React.createElement("h2", { className: "font-bold text-lg mb-4" }, "Nueva Cotización"),
+                            React.createElement("div", { className: "space-y-4" },
+                                React.createElement("input", { 
+                                    type: "text", 
+                                    placeholder: "Nombre del cliente", 
+                                    value: formData.cliente,
+                                    onChange: (e) => setFormData({...formData, cliente: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                }),
+                                React.createElement("input", { 
+                                    type: "tel", 
+                                    placeholder: "Teléfono (opcional)", 
+                                    value: formData.telefono,
+                                    onChange: (e) => setFormData({...formData, telefono: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                }),
+                                React.createElement("select", { 
+                                    value: formData.tipoEvento, 
+                                    onChange: (e) => setFormData({...formData, tipoEvento: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                },
+                                    tiposEvento.map(t => React.createElement("option", { key: t, value: t }, t))
+                                ),
+                                React.createElement("div", { className: "grid grid-cols-2 gap-3" },
+                                    React.createElement("input", { 
+                                        type: "date", 
+                                        value: formData.fecha,
+                                        onChange: (e) => setFormData({...formData, fecha: e.target.value}),
+                                        className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                    }),
+                                    React.createElement("input", { 
+                                        type: "time", 
+                                        value: formData.horario,
+                                        onChange: (e) => setFormData({...formData, horario: e.target.value}),
+                                        className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                    })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: "text-xs font-bold text-slate-500 uppercase mb-1 block" }, `Personas: ${formData.personas}`),
+                                    React.createElement("input", { 
+                                        type: "range", 
+                                        min: 10, max: 300, step: 10,
+                                        value: formData.personas,
+                                        onChange: (e) => setFormData({...formData, personas: Number(e.target.value)}),
+                                        className: "w-full accent-[#ff6b00]"
+                                    })
+                                ),
+                                React.createElement("div", null,
+                                    React.createElement("label", { className: "text-xs font-bold text-slate-500 uppercase mb-2 block" }, "Servicios"),
+                                    React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                                        serviciosDisponibles.map(s => 
+                                            React.createElement("button", { 
+                                                key: s.id,
+                                                onClick: () => toggleServicio(s.id),
+                                                className: `p-2 rounded-lg text-xs font-bold border transition-all text-left ${formData.servicios.includes(s.id) ? 'bg-[#ff6b00] text-white border-[#ff6b00]' : darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-200'}`
+                                            }, 
+                                                React.createElement("span", { className: "block" }, s.nombre),
+                                                React.createElement("span", { className: "text-[10px] opacity-70" }, s.fijo ? `$${s.precioBase.toLocaleString()}` : `$${s.precioBase.toLocaleString()}/pers`)
+                                            )
+                                        )
+                                    )
+                                ),
+                                React.createElement("div", { className: `p-4 rounded-xl text-center ${darkMode ? 'bg-slate-700' : 'bg-orange-50'}` },
+                                    React.createElement("p", { className: "text-xs font-bold text-slate-400 uppercase" }, "Total Estimado"),
+                                    React.createElement("p", { className: "text-3xl font-bold text-[#ff6b00] font-mono" }, `$${calcularTotal().toLocaleString()}`)
+                                ),
+                                React.createElement("div", { className: "flex gap-3" },
+                                    React.createElement("button", { onClick: () => setShowForm(false), className: `flex-1 py-3 rounded-xl font-bold border ${darkMode ? 'border-slate-600 text-slate-300' : 'border-slate-200 text-slate-500'}` }, "Cancelar"),
+                                    React.createElement("button", { onClick: handleSubmit, className: "flex-1 py-3 bg-[#ff6b00] text-white rounded-xl font-bold" }, "Guardar Cotización")
+                                )
+                            )
+                        )
+                    )
+                ),
+
+                // Botón flotante
+                React.createElement("button", { 
+                    onClick: () => setShowForm(true),
+                    className: "fixed bottom-6 right-6 w-14 h-14 bg-[#ff6b00] text-white rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
+                }, React.createElement(IconPlus))
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(EventosApp));
+    </script>
+</body>
+
+</html>

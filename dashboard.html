@@ -60,8 +60,13 @@
 
         const Dashboard = () => {
             const [darkMode, setDarkMode] = useState(false);
-            const [data, setData] = useState([]); // Aquí guardaremos los datos de los gráficos
+            const [local, setLocal] = useState('coete1');
+            const [data, setData] = useState([]);
             const [stats, setStats] = useState({ ventaSemanal: 0, ticketPromedio: 0, diferenciaCaja: 0 });
+            const [stockFaltantes, setStockFaltantes] = useState({});
+            const [cuentasStats, setCuentasStats] = useState({ pendiente: 0, pagado: 0 });
+            const [mantencionesStats, setMantencionesStats] = useState({ reportados: 0, enProceso: 0 });
+            const [eventosStats, setEventosStats] = useState({ confirmados: 0, potencial: 0 });
             const [loading, setLoading] = useState(true);
 
             // Efecto: Se ejecuta al abrir la página para traer datos
@@ -77,13 +82,23 @@
                         const cierres = [];
                         let totalVenta = 0;
                         let totalDiferencia = 0;
+                        const quiebresCount = {}; // Para contar frecuencia de quiebres
 
                         // Procesamos cada cierre que llegó
                         querySnapshot.forEach((doc) => {
                             const d = doc.data();
+                            // Filtrar por local (solo si no es 'ambos')
+                            if (local !== 'ambos' && d.local !== local) return;
                             cierres.push(d);
                             totalVenta += Number(d.totalVenta) || 0;
                             totalDiferencia += Number(d.diferenciaCaja) || 0;
+                            
+                            // Contar quiebres de stock
+                            if (d.stockFaltante && Array.isArray(d.stockFaltante)) {
+                                d.stockFaltante.forEach(item => {
+                                    quiebresCount[item] = (quiebresCount[item] || 0) + 1;
+                                });
+                            }
                         });
 
                         // Preparamos los datos para el gráfico (Invertimos para que sea Cronológico: Lun -> Dom)
@@ -101,6 +116,42 @@
                             ticketPromedio: cierres.length > 0 ? Math.round(totalVenta / (cierres.length * 40)) : 0,
                             diferenciaCaja: totalDiferencia
                         });
+                        setStockFaltantes(quiebresCount);
+
+                        // Fetch Cuentas (filtrar por local)
+                        const cuentasSnap = await getDocs(collection(db, "cuentas"));
+                        let pendiente = 0, pagado = 0;
+                        cuentasSnap.forEach(doc => {
+                            const c = doc.data();
+                            if (local !== 'ambos' && c.local !== local) return;
+                            if (c.estado === 'pendiente') pendiente += Number(c.monto) || 0;
+                            else pagado += Number(c.monto) || 0;
+                        });
+                        setCuentasStats({ pendiente, pagado });
+
+                        // Fetch Mantenciones (filtrar por local)
+                        const mantSnap = await getDocs(collection(db, "mantenciones"));
+                        let reportados = 0, enProceso = 0;
+                        mantSnap.forEach(doc => {
+                            const m = doc.data();
+                            if (local !== 'ambos' && m.local !== local) return;
+                            if (m.estado === 'reportado') reportados++;
+                            else if (m.estado === 'en_proceso') enProceso++;
+                        });
+                        setMantencionesStats({ reportados, enProceso });
+
+                        // Fetch Eventos
+                        const eventosSnap = await getDocs(collection(db, "eventos"));
+                        let confirmados = 0, potencial = 0;
+                        eventosSnap.forEach(doc => {
+                            const e = doc.data();
+                            if (e.estado === 'confirmado') {
+                                confirmados++;
+                                potencial += Number(e.total) || 0;
+                            }
+                        });
+                        setEventosStats({ confirmados, potencial });
+
                         setLoading(false);
 
                     } catch (e) {
@@ -109,7 +160,7 @@
                     }
                 };
                 fetchData();
-            }, []);
+            }, [local]); // Re-fetch cuando cambia el local
 
             return React.createElement("div", { className: `max-w-md mx-auto min-h-screen pb-10 transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-[#f8fafc] text-slate-800'}` },
 
@@ -117,7 +168,11 @@
                 React.createElement("header", { className: `px-6 pt-8 pb-6 border-b sticky top-0 z-10 flex justify-between items-start ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}` },
                     React.createElement("div", null,
                         React.createElement("h1", { className: "text-xl font-bold tracking-tight" }, "Panel de Control"),
-                        React.createElement("p", { className: "text-xs font-medium uppercase tracking-wider mt-1 text-slate-500" }, loading ? "Sincronizando..." : "Datos en Tiempo Real")
+                        React.createElement("div", { className: "flex gap-2 mt-2" },
+                            React.createElement("button", { onClick: () => setLocal('coete1'), className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${local === 'coete1' ? 'bg-[#ff6b00] text-white' : darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}` }, "Coete 1"),
+                            React.createElement("button", { onClick: () => setLocal('coete2'), className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${local === 'coete2' ? 'bg-[#ff6b00] text-white' : darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}` }, "Coete 2"),
+                            React.createElement("button", { onClick: () => setLocal('ambos'), className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${local === 'ambos' ? 'bg-purple-500 text-white' : darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}` }, "Ambos")
+                        )
                     ),
                     React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-orange-500" }, darkMode ? "☀️" : "🌙")
                 ),
@@ -158,6 +213,66 @@
                                     React.createElement("span", { className: "text-[10px] font-bold text-slate-400" }, d.day)
                                 )) : React.createElement("p", { className: "text-xs text-slate-400 w-full text-center" }, "Sin datos aún. ¡Haz un cierre para ver magia!")
                             )
+                    ),
+
+                    // Panel de Quiebres de Stock
+                    React.createElement("div", { className: `p-5 rounded-2xl shadow-sm border ${Object.keys(stockFaltantes).length > 0 ? 'border-red-200 bg-red-50' : darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                        React.createElement("div", { className: "flex items-center justify-between mb-4" },
+                            React.createElement("h3", { className: `font-bold ${Object.keys(stockFaltantes).length > 0 ? 'text-red-700' : ''}` }, "🚨 Quiebres de Stock"),
+                            Object.keys(stockFaltantes).length > 0 && React.createElement("span", { className: "bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full" }, `${Object.keys(stockFaltantes).length} items`)
+                        ),
+
+                        loading ? React.createElement("p", { className: "text-center py-6 text-slate-400" }, "Cargando...") :
+                            Object.keys(stockFaltantes).length > 0 ? 
+                                React.createElement("div", { className: "space-y-2" },
+                                    Object.entries(stockFaltantes)
+                                        .sort((a, b) => b[1] - a[1]) // Ordenar por frecuencia
+                                        .map(([item, count]) => 
+                                            React.createElement("div", { key: item, className: `flex items-center justify-between p-3 rounded-xl ${count >= 3 ? 'bg-red-100 border border-red-300' : darkMode ? 'bg-slate-700' : 'bg-white border border-slate-100'}` },
+                                                React.createElement("span", { className: `font-medium ${count >= 3 ? 'text-red-700' : ''}` }, item),
+                                                React.createElement("div", { className: "flex items-center gap-2" },
+                                                    React.createElement("span", { className: `text-xs font-bold px-2 py-1 rounded-full ${count >= 3 ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-200 text-slate-600'}` }, 
+                                                        count >= 3 ? `⚠️ ${count} veces` : `${count}x`
+                                                    )
+                                                )
+                                            )
+                                        )
+                                )
+                            : React.createElement("p", { className: "text-center py-6 text-slate-400 text-sm" }, "✅ Sin quiebres reportados")
+                    ),
+
+                    // Panel de Módulos Rápidos
+                    React.createElement("div", { className: `p-5 rounded-2xl shadow-sm border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}` },
+                        React.createElement("h3", { className: "font-bold mb-4" }, "⚡ Acceso Rápido"),
+                        React.createElement("div", { className: "grid grid-cols-2 gap-3" },
+                            
+                            // Cuentas
+                            React.createElement("a", { href: "cuentas.html", className: `p-4 rounded-xl border transition-all hover:scale-105 ${cuentasStats.pendiente > 0 ? 'bg-red-50 border-red-200' : darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-100'}` },
+                                React.createElement("p", { className: "text-2xl mb-1" }, "💰"),
+                                React.createElement("p", { className: "font-bold text-sm" }, "Cuentas"),
+                                cuentasStats.pendiente > 0 && React.createElement("p", { className: "text-xs text-red-500 font-bold" }, `$${(cuentasStats.pendiente/1000).toFixed(0)}k pendiente`)
+                            ),
+                            
+                            // Mantenciones
+                            React.createElement("a", { href: "mantenciones.html", className: `p-4 rounded-xl border transition-all hover:scale-105 ${mantencionesStats.reportados > 0 ? 'bg-yellow-50 border-yellow-200' : darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-100'}` },
+                                React.createElement("p", { className: "text-2xl mb-1" }, "🔧"),
+                                React.createElement("p", { className: "font-bold text-sm" }, "Mantenciones"),
+                                (mantencionesStats.reportados + mantencionesStats.enProceso) > 0 && React.createElement("p", { className: "text-xs text-yellow-600 font-bold" }, `${mantencionesStats.reportados + mantencionesStats.enProceso} pendientes`)
+                            ),
+                            
+                            // Eventos
+                            React.createElement("a", { href: "eventos.html", className: `p-4 rounded-xl border transition-all hover:scale-105 ${eventosStats.confirmados > 0 ? 'bg-green-50 border-green-200' : darkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-100'}` },
+                                React.createElement("p", { className: "text-2xl mb-1" }, "🎉"),
+                                React.createElement("p", { className: "font-bold text-sm" }, "Eventos"),
+                                eventosStats.confirmados > 0 && React.createElement("p", { className: "text-xs text-green-600 font-bold" }, `${eventosStats.confirmados} confirmados`)
+                            ),
+                            
+                            // Cierre
+                            React.createElement("a", { href: "cierre.html", className: `p-4 rounded-xl border transition-all hover:scale-105 ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-orange-50 border-orange-100'}` },
+                                React.createElement("p", { className: "text-2xl mb-1" }, "📝"),
+                                React.createElement("p", { className: "font-bold text-sm text-[#ff6b00]" }, "Nuevo Cierre")
+                            )
+                        )
                     )
                 )
             );

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Coete - Mantenciones</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800 transition-colors duration-300">
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDIfYedJ-S-fvVeRHRq3o-BEv0es_EUH9U",
+            authDomain: "coete-system.firebaseapp.com",
+            projectId: "coete-system",
+            storageBucket: "coete-system.firebasestorage.app",
+            messagingSenderId: "139946462232",
+            appId: "1:139946462232:web:fcc25397ebaac8c10cc76d"
+        };
+
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("🔥 Mantenciones conectado a Firebase");
+        } catch (e) {
+            console.error("Error conectando Firebase:", e);
+        }
+
+        import React, { useState, useEffect } from "https://esm.sh/react@18";
+        import ReactDOM from "https://esm.sh/react-dom@18";
+
+        const IconPlus = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("line", { x1: "12", y1: "5", x2: "12", y2: "19" }), React.createElement("line", { x1: "5", y1: "12", x2: "19", y2: "12" }));
+        const IconTool = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" }));
+        const IconSun = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "5" }), React.createElement("path", { d: "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" }));
+        const IconMoon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("path", { d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" }));
+
+        const MantencionesApp = () => {
+            const [darkMode, setDarkMode] = useState(false);
+            const [local, setLocal] = useState('coete1');
+            const [mantenciones, setMantenciones] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showForm, setShowForm] = useState(false);
+            const [filtro, setFiltro] = useState('pendientes');
+            const [formData, setFormData] = useState({
+                equipo: '',
+                descripcion: '',
+                prioridad: 'media',
+                ubicacion: 'Barra',
+                asignado: ''
+            });
+
+            const equipos = [
+                "Máquina Espresso", "Molino Café", "Horno Pizza", "Refrigerador", "Congelador", 
+                "Lavavajillas", "Campana Extractora", "Aire Acondicionado", "Iluminación", 
+                "Mobiliario", "Baños", "Piso/Suelo", "Puerta/Ventana", "Sistema Eléctrico", "Otro"
+            ];
+
+            const tecnicos = ["Técnico Interno", "Servicio Externo", "Por Asignar"];
+            const ubicaciones = ["Barra", "Cocina", "Salón", "Baños", "Bodega", "Exterior"];
+
+            useEffect(() => {
+                fetchMantenciones();
+            }, []);
+
+            const fetchMantenciones = async () => {
+                if (!db) return;
+                try {
+                    const q = query(collection(db, "mantenciones"), orderBy("fechaReporte", "desc"));
+                    const querySnapshot = await getDocs(q);
+                    const data = [];
+                    querySnapshot.forEach((doc) => {
+                        data.push({ id: doc.id, ...doc.data() });
+                    });
+                    setMantenciones(data);
+                    setLoading(false);
+                } catch (e) {
+                    console.error("Error cargando mantenciones:", e);
+                    setLoading(false);
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!formData.equipo || !formData.descripcion) {
+                    alert("Equipo y descripción son obligatorios");
+                    return;
+                }
+                try {
+                    await addDoc(collection(db, "mantenciones"), {
+                        ...formData,
+                        local: local,
+                        estado: 'reportado',
+                        fechaReporte: serverTimestamp()
+                    });
+                    setFormData({ equipo: '', descripcion: '', prioridad: 'media', ubicacion: 'Barra', asignado: '' });
+                    setShowForm(false);
+                    fetchMantenciones();
+                } catch (e) {
+                    console.error("Error guardando:", e);
+                    alert("Error al guardar");
+                }
+            };
+
+            const cambiarEstado = async (id, nuevoEstado) => {
+                try {
+                    const updates = { estado: nuevoEstado };
+                    if (nuevoEstado === 'cerrado') updates.fechaCierre = new Date().toISOString();
+                    if (nuevoEstado === 'en_proceso') updates.fechaInicio = new Date().toISOString();
+                    await updateDoc(doc(db, "mantenciones", id), updates);
+                    fetchMantenciones();
+                } catch (e) {
+                    console.error("Error actualizando:", e);
+                }
+            };
+
+            const mantencionesLocal = mantenciones.filter(m => !m.local || m.local === local);
+            const mantencionesFiltered = mantencionesLocal.filter(m => {
+                if (filtro === 'pendientes') return m.estado !== 'cerrado';
+                if (filtro === 'cerradas') return m.estado === 'cerrado';
+                return true;
+            });
+
+            const stats = {
+                reportados: mantencionesLocal.filter(m => m.estado === 'reportado').length,
+                enProceso: mantencionesLocal.filter(m => m.estado === 'en_proceso').length,
+                cerrados: mantencionesLocal.filter(m => m.estado === 'cerrado').length
+            };
+
+            const getPrioridadColor = (p) => {
+                if (p === 'alta') return 'bg-red-500';
+                if (p === 'media') return 'bg-yellow-500';
+                return 'bg-green-500';
+            };
+
+            const getEstadoBadge = (estado) => {
+                if (estado === 'reportado') return { bg: 'bg-red-100 text-red-700', text: '🔴 Reportado' };
+                if (estado === 'en_proceso') return { bg: 'bg-yellow-100 text-yellow-700', text: '🟡 En Proceso' };
+                return { bg: 'bg-green-100 text-green-700', text: '🟢 Cerrado' };
+            };
+
+            return React.createElement("div", { className: `max-w-md mx-auto min-h-screen shadow-xl overflow-hidden flex flex-col transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-800'}` },
+                
+                // Header
+                React.createElement("header", { className: `p-6 pb-8 sticky top-0 z-10 flex justify-between items-center ${darkMode ? 'bg-slate-800 text-white' : 'bg-slate-900 text-white'}` },
+                    React.createElement("div", null,
+                        React.createElement("h1", { className: "text-xl font-bold flex items-center gap-2" }, React.createElement(IconTool), "Mantenciones"),
+                        React.createElement("div", { className: "flex gap-2 mt-2" },
+                            React.createElement("button", { onClick: () => setLocal('coete1'), className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${local === 'coete1' ? 'bg-[#ff6b00] text-white' : 'bg-white/20 text-white/70'}` }, "Coete 1"),
+                            React.createElement("button", { onClick: () => setLocal('coete2'), className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${local === 'coete2' ? 'bg-[#ff6b00] text-white' : 'bg-white/20 text-white/70'}` }, "Coete 2")
+                        )
+                    ),
+                    React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-white/10 hover:bg-white/20 transition" },
+                        darkMode ? React.createElement(IconSun) : React.createElement(IconMoon)
+                    )
+                ),
+
+                // Contenido
+                React.createElement("div", { className: `flex-1 p-6 -mt-4 rounded-t-3xl overflow-y-auto transition-colors duration-300 ${darkMode ? 'bg-slate-900' : 'bg-white'}` },
+                    
+                    // Stats
+                    React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-6" },
+                        React.createElement("div", { className: `p-3 rounded-xl text-center ${darkMode ? 'bg-slate-800' : 'bg-red-50'}` },
+                            React.createElement("p", { className: "text-2xl font-bold text-red-500" }, stats.reportados),
+                            React.createElement("p", { className: "text-[10px] font-bold text-red-400 uppercase" }, "Reportados")
+                        ),
+                        React.createElement("div", { className: `p-3 rounded-xl text-center ${darkMode ? 'bg-slate-800' : 'bg-yellow-50'}` },
+                            React.createElement("p", { className: "text-2xl font-bold text-yellow-500" }, stats.enProceso),
+                            React.createElement("p", { className: "text-[10px] font-bold text-yellow-400 uppercase" }, "En Proceso")
+                        ),
+                        React.createElement("div", { className: `p-3 rounded-xl text-center ${darkMode ? 'bg-slate-800' : 'bg-green-50'}` },
+                            React.createElement("p", { className: "text-2xl font-bold text-green-500" }, stats.cerrados),
+                            React.createElement("p", { className: "text-[10px] font-bold text-green-400 uppercase" }, "Cerrados")
+                        )
+                    ),
+
+                    // Filtros
+                    React.createElement("div", { className: "flex gap-2 mb-4" },
+                        ['pendientes', 'cerradas', 'todas'].map(f => 
+                            React.createElement("button", { 
+                                key: f, 
+                                onClick: () => setFiltro(f),
+                                className: `px-4 py-2 rounded-full text-xs font-bold transition-all ${filtro === f ? 'bg-[#ff6b00] text-white' : darkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`
+                            }, f.charAt(0).toUpperCase() + f.slice(1))
+                        )
+                    ),
+
+                    // Lista
+                    loading ? 
+                        React.createElement("p", { className: "text-center py-10 text-slate-400" }, "Cargando...") :
+                        React.createElement("div", { className: "space-y-3" },
+                            mantencionesFiltered.length === 0 ? 
+                                React.createElement("p", { className: "text-center py-10 text-slate-400 text-sm" }, "No hay mantenciones en esta categoría") :
+                                mantencionesFiltered.map(m => {
+                                    const estadoBadge = getEstadoBadge(m.estado);
+                                    return React.createElement("div", { 
+                                        key: m.id, 
+                                        className: `p-4 rounded-xl border transition-all fade-in ${m.estado === 'cerrado' ? 'opacity-60' : ''} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`
+                                    },
+                                        React.createElement("div", { className: "flex justify-between items-start mb-2" },
+                                            React.createElement("div", { className: "flex items-center gap-2" },
+                                                React.createElement("div", { className: `w-2 h-2 rounded-full ${getPrioridadColor(m.prioridad)}` }),
+                                                React.createElement("p", { className: "font-bold" }, m.equipo)
+                                            ),
+                                            React.createElement("span", { className: `text-[10px] font-bold px-2 py-1 rounded-full ${estadoBadge.bg}` }, estadoBadge.text)
+                                        ),
+                                        React.createElement("p", { className: "text-sm text-slate-500 mb-2" }, m.descripcion),
+                                        React.createElement("div", { className: "flex justify-between items-center text-[10px] text-slate-400" },
+                                            React.createElement("span", null, `📍 ${m.ubicacion}`),
+                                            m.asignado && React.createElement("span", null, `👷 ${m.asignado}`)
+                                        ),
+                                        m.estado !== 'cerrado' && React.createElement("div", { className: "flex gap-2 mt-3" },
+                                            m.estado === 'reportado' && React.createElement("button", { 
+                                                onClick: () => cambiarEstado(m.id, 'en_proceso'),
+                                                className: "flex-1 py-2 bg-yellow-500 text-white text-xs font-bold rounded-lg"
+                                            }, "Iniciar"),
+                                            React.createElement("button", { 
+                                                onClick: () => cambiarEstado(m.id, 'cerrado'),
+                                                className: "flex-1 py-2 bg-green-500 text-white text-xs font-bold rounded-lg"
+                                            }, "Cerrar")
+                                        )
+                                    );
+                                })
+                        ),
+
+                    // Formulario
+                    showForm && React.createElement("div", { className: `fixed inset-0 bg-black/50 z-50 flex items-end` },
+                        React.createElement("div", { className: `w-full max-w-md mx-auto p-6 rounded-t-3xl ${darkMode ? 'bg-slate-800' : 'bg-white'}` },
+                            React.createElement("h2", { className: "font-bold text-lg mb-4" }, "Reportar Problema"),
+                            React.createElement("div", { className: "space-y-4" },
+                                React.createElement("select", { 
+                                    value: formData.equipo, 
+                                    onChange: (e) => setFormData({...formData, equipo: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                },
+                                    React.createElement("option", { value: "" }, "Seleccionar Equipo"),
+                                    equipos.map(e => React.createElement("option", { key: e, value: e }, e))
+                                ),
+                                React.createElement("select", { 
+                                    value: formData.ubicacion, 
+                                    onChange: (e) => setFormData({...formData, ubicacion: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                },
+                                    ubicaciones.map(u => React.createElement("option", { key: u, value: u }, u))
+                                ),
+                                React.createElement("textarea", { 
+                                    placeholder: "Descripción del problema", 
+                                    rows: 3,
+                                    value: formData.descripcion,
+                                    onChange: (e) => setFormData({...formData, descripcion: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                }),
+                                React.createElement("div", { className: "flex gap-2" },
+                                    ['baja', 'media', 'alta'].map(p => 
+                                        React.createElement("button", { 
+                                            key: p,
+                                            onClick: () => setFormData({...formData, prioridad: p}),
+                                            className: `flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${formData.prioridad === p ? getPrioridadColor(p) + ' text-white' : darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-200'}`
+                                        }, p.charAt(0).toUpperCase() + p.slice(1))
+                                    )
+                                ),
+                                React.createElement("select", { 
+                                    value: formData.asignado, 
+                                    onChange: (e) => setFormData({...formData, asignado: e.target.value}),
+                                    className: `w-full p-3 border rounded-xl ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-50 border-slate-200'}`
+                                },
+                                    React.createElement("option", { value: "" }, "Asignar a..."),
+                                    tecnicos.map(t => React.createElement("option", { key: t, value: t }, t))
+                                ),
+                                React.createElement("div", { className: "flex gap-3" },
+                                    React.createElement("button", { onClick: () => setShowForm(false), className: `flex-1 py-3 rounded-xl font-bold border ${darkMode ? 'border-slate-600 text-slate-300' : 'border-slate-200 text-slate-500'}` }, "Cancelar"),
+                                    React.createElement("button", { onClick: handleSubmit, className: "flex-1 py-3 bg-[#ff6b00] text-white rounded-xl font-bold" }, "Reportar")
+                                )
+                            )
+                        )
+                    )
+                ),
+
+                // Botón flotante
+                React.createElement("button", { 
+                    onClick: () => setShowForm(true),
+                    className: "fixed bottom-6 right-6 w-14 h-14 bg-[#ff6b00] text-white rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
+                }, React.createElement(IconPlus))
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(MantencionesApp));
+    </script>
+</body>
+
+</html>

@@ -39,7 +39,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
         // --- TU CONFIGURACIÓN (YA INSERTADA) ---
         const firebaseConfig = {
@@ -62,7 +62,7 @@
         }
 
         // --- APLICACIÓN REACT ---
-        import React, { useState } from "https://esm.sh/react@18";
+        import React, { useState, useEffect } from "https://esm.sh/react@18";
         import ReactDOM from "https://esm.sh/react-dom@18";
 
         const IconSun = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, React.createElement("circle", { cx: "12", cy: "12", r: "5" }), React.createElement("path", { d: "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" }));
@@ -73,6 +73,7 @@
             const [darkMode, setDarkMode] = useState(false);
             const [guardando, setGuardando] = useState(false);
             const [formData, setFormData] = useState({
+                local: 'coete1',
                 responsable: 'Victor',
                 efectivo: '',
                 debito: '',
@@ -81,13 +82,68 @@
                 propinas: '',
                 gastos: '',
                 novedades: '',
-                diferencia: 0
+                diferencia: 0,
+                equipoFalla: ''
             });
 
             const [stockCritico, setStockCritico] = useState([]);
+            const [itemsPersonalizados, setItemsPersonalizados] = useState({ Barra: [], Cocina: [], Aseo: [] });
+            const [nuevoItem, setNuevoItem] = useState('');
+            const [categoriaItem, setCategoriaItem] = useState('Barra');
+            const [showAddItem, setShowAddItem] = useState(false);
+
+            // Items predefinidos (base)
             const insumosBarra = ["Café Grano", "Leche Entera", "Leche Veg", "Vasos 8oz/12oz", "Hielo"];
             const insumosCocina = ["Huevos", "Palta", "Pan Hogaza", "Queso", "Jamón"];
             const insumosAseo = ["Nova/Papel", "Químicos", "Paños", "Bolsas"];
+            const equiposLista = ["Máquina Espresso", "Molino", "Horno", "Refrigerador", "Congelador", "Lavavajillas", "Aire Acondicionado", "Iluminación", "Otro"];
+
+            // Cargar items personalizados desde Firebase
+            useEffect(() => {
+                const fetchItemsPersonalizados = async () => {
+                    if (!db) return;
+                    try {
+                        const q = query(collection(db, "items_quiebre"), orderBy("nombre", "asc"));
+                        const snap = await getDocs(q);
+                        const items = { Barra: [], Cocina: [], Aseo: [] };
+                        snap.forEach(doc => {
+                            const d = doc.data();
+                            if (items[d.categoria]) {
+                                items[d.categoria].push(d.nombre);
+                            }
+                        });
+                        setItemsPersonalizados(items);
+                    } catch (e) {
+                        console.error("Error cargando items personalizados:", e);
+                    }
+                };
+                fetchItemsPersonalizados();
+            }, []);
+
+            // Agregar nuevo item personalizado
+            const agregarItemPersonalizado = async () => {
+                if (!nuevoItem.trim()) return;
+                try {
+                    await addDoc(collection(db, "items_quiebre"), {
+                        nombre: nuevoItem.trim(),
+                        categoria: categoriaItem,
+                        fechaCreacion: serverTimestamp()
+                    });
+                    setItemsPersonalizados(prev => ({
+                        ...prev,
+                        [categoriaItem]: [...prev[categoriaItem], nuevoItem.trim()]
+                    }));
+                    setNuevoItem('');
+                    setShowAddItem(false);
+                } catch (e) {
+                    console.error("Error guardando item:", e);
+                }
+            };
+
+            // Combinar items predefinidos + personalizados
+            const todosItemsBarra = [...insumosBarra, ...itemsPersonalizados.Barra];
+            const todosItemsCocina = [...insumosCocina, ...itemsPersonalizados.Cocina];
+            const todosItemsAseo = [...insumosAseo, ...itemsPersonalizados.Aseo];
 
             const [showPreview, setShowPreview] = useState(false);
             const [copySuccess, setCopySuccess] = useState(false);
@@ -115,6 +171,7 @@
                         await addDoc(collection(db, "cierres"), {
                             fecha: serverTimestamp(),
                             fechaString: fechaHoy,
+                            local: formData.local,
                             responsable: formData.responsable,
                             totalVenta: totalVenta,
                             efectivo: Number(formData.efectivo) || 0,
@@ -125,7 +182,8 @@
                             gastos: Number(formData.gastos) || 0,
                             diferenciaCaja: Number(formData.diferencia) || 0,
                             novedades: formData.novedades,
-                            stockFaltante: stockCritico
+                            stockFaltante: stockCritico,
+                            equipoFalla: formData.equipoFalla || null
                         });
                         console.log("✅ Dato guardado en la nube");
                     }
@@ -150,8 +208,12 @@
                 }
 
                 const novedades = formData.novedades ? `\n📝 *Novedades:* ${formData.novedades}` : '';
+                const equipoMsg = formData.equipoFalla ? `\n🔧 *EQUIPO CON FALLA:* ${formData.equipoFalla}` : '';
 
-                return `*📅 Informe ${fechaHoy} - ${formData.responsable}*
+                const localLabel = formData.local === 'coete1' ? 'COETE 1' : 'COETE 2';
+
+                return `*📅 Informe ${fechaHoy} - ${localLabel}*
+*👤 ${formData.responsable}*
 
 💵 *Venta Total:* $${totalVenta.toLocaleString()}
 ------------------
@@ -160,7 +222,7 @@
 💸 Efectivo: $${Number(formData.efectivo).toLocaleString()}
 📱 Transf: $${Number(formData.transferencias).toLocaleString()}
 
-🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}${stockMsg}
+🥸 *Propinas:* $${Number(formData.propinas).toLocaleString()}${gastos}${alertas}${stockMsg}${equipoMsg}
 ${novedades}
 
 👋🏻 ¡Cierre enviado desde App Coete!`;
@@ -170,7 +232,16 @@ ${novedades}
                 React.createElement("header", { className: `p-6 pb-8 sticky top-0 z-10 flex justify-between items-center ${darkMode ? 'bg-slate-800 text-white' : 'bg-slate-900 text-white'}` },
                     React.createElement("div", null,
                         React.createElement("h1", { className: "text-xl font-bold" }, "Cierre de Turno"),
-                        React.createElement("p", { className: "text-slate-400 text-xs uppercase tracking-wider" }, "Sistema Operativo Coete 2.1")
+                        React.createElement("div", { className: "flex gap-2 mt-2" },
+                            React.createElement("button", { 
+                                onClick: () => setFormData({...formData, local: 'coete1'}),
+                                className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${formData.local === 'coete1' ? 'bg-[#ff6b00] text-white' : 'bg-white/20 text-white/70'}`
+                            }, "Coete 1"),
+                            React.createElement("button", { 
+                                onClick: () => setFormData({...formData, local: 'coete2'}),
+                                className: `px-3 py-1 rounded-full text-xs font-bold transition-all ${formData.local === 'coete2' ? 'bg-[#ff6b00] text-white' : 'bg-white/20 text-white/70'}`
+                            }, "Coete 2")
+                        )
                     ),
                     React.createElement("button", { onClick: () => setDarkMode(!darkMode), className: "p-2 rounded-full bg-white/10 hover:bg-white/20 transition" },
                         darkMode ? React.createElement(IconSun) : React.createElement(IconMoon)
@@ -217,28 +288,62 @@ ${novedades}
                                     React.createElement("input", { type: "number", name: "diferencia", placeholder: "0", className: `w-full p-3 border rounded-xl font-mono focus:outline-none ${formData.diferencia != 0 ? 'bg-red-500/20 text-red-500 border-red-500' : darkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-orange-200'}`, onChange: handleChange })
                                 )
                             ),
-                            React.createElement("div", null,
-                                React.createElement("label", { className: `block text-xs font-bold uppercase mb-2 flex items-center gap-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, React.createElement(IconAlert), " Reporte de Quiebres"),
+                            React.createElement("div", { className: `p-4 rounded-xl border ${stockCritico.length > 0 ? 'border-red-300 bg-red-50' : darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}` },
+                                React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                                    React.createElement("label", { className: `text-xs font-bold uppercase flex items-center gap-2 ${stockCritico.length > 0 ? 'text-red-600' : darkMode ? 'text-slate-400' : 'text-slate-500'}` }, 
+                                        React.createElement(IconAlert), 
+                                        " Reporte de Quiebres"
+                                    ),
+                                    React.createElement("div", { className: "flex items-center gap-2" },
+                                        stockCritico.length > 0 && React.createElement("span", { className: "bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse" }, `${stockCritico.length}`),
+                                        React.createElement("button", { onClick: () => setShowAddItem(!showAddItem), className: `px-2 py-1 rounded-full text-[10px] font-bold ${showAddItem ? 'bg-green-500 text-white' : darkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'}` }, showAddItem ? "X" : "+ Item")
+                                    )
+                                ),
+                                showAddItem && React.createElement("div", { className: `mb-4 p-3 rounded-lg border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-green-50 border-green-200'}` },
+                                    React.createElement("p", { className: "text-[10px] font-bold text-green-600 uppercase mb-2" }, "Agregar item nuevo"),
+                                    React.createElement("div", { className: "flex gap-2" },
+                                        React.createElement("input", { type: "text", placeholder: "Nombre", value: nuevoItem, onChange: (e) => setNuevoItem(e.target.value), className: `flex-1 p-2 border rounded-lg text-xs ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-200'}` }),
+                                        React.createElement("select", { value: categoriaItem, onChange: (e) => setCategoriaItem(e.target.value), className: `p-2 border rounded-lg text-xs ${darkMode ? 'bg-slate-800 border-slate-600 text-white' : 'bg-white border-slate-200'}` },
+                                            React.createElement("option", { value: "Barra" }, "Barra"),
+                                            React.createElement("option", { value: "Cocina" }, "Cocina"),
+                                            React.createElement("option", { value: "Aseo" }, "Aseo")
+                                        ),
+                                        React.createElement("button", { onClick: agregarItemPersonalizado, className: "px-3 py-2 bg-green-500 text-white text-xs font-bold rounded-lg" }, "OK")
+                                    )
+                                ),
                                 React.createElement("div", { className: "space-y-3" },
                                     React.createElement("div", null,
-                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Barra"),
-                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosBarra.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                        React.createElement("p", { className: `text-[10px] uppercase font-bold mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-400'}` }, "Barra"),
+                                        React.createElement("div", { className: "flex flex-wrap gap-2" }, todosItemsBarra.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-500'}` }, i)))
                                     ),
                                     React.createElement("div", null,
-                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Cocina"),
-                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosCocina.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                        React.createElement("p", { className: `text-[10px] uppercase font-bold mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-400'}` }, "Cocina"),
+                                        React.createElement("div", { className: "flex flex-wrap gap-2" }, todosItemsCocina.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-500'}` }, i)))
                                     ),
                                     React.createElement("div", null,
-                                        React.createElement("p", { className: "text-[10px] uppercase font-bold text-slate-400 mb-1" }, "Aseo"),
-                                        React.createElement("div", { className: "grid grid-cols-3 gap-2" }, insumosAseo.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `p-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}` }, i)))
+                                        React.createElement("p", { className: `text-[10px] uppercase font-bold mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-400'}` }, "Aseo"),
+                                        React.createElement("div", { className: "flex flex-wrap gap-2" }, todosItemsAseo.map(i => React.createElement("button", { key: i, onClick: () => toggleStock(i), className: `px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${stockCritico.includes(i) ? 'bg-red-500 text-white border-red-600' : darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-500'}` }, i)))
                                     )
+                                ),
+                                stockCritico.length > 0 && React.createElement("div", { className: "mt-3 pt-3 border-t border-red-200" },
+                                    React.createElement("p", { className: "text-xs font-bold text-red-600 mb-1" }, "Faltantes:"),
+                                    React.createElement("p", { className: "text-xs text-red-700" }, stockCritico.join(" - "))
+                                )
+                            ),
+                            React.createElement("div", null,
+                                React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 flex items-center gap-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "🔧 Equipo con Falla (opcional)"),
+                                React.createElement("select", { name: "equipoFalla", value: formData.equipoFalla, onChange: handleChange, className: `w-full p-3 border rounded-xl ${formData.equipoFalla ? 'border-yellow-400 bg-yellow-50' : darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}` },
+                                    React.createElement("option", { value: "" }, "Sin problemas de equipos"),
+                                    equiposLista.map(eq => React.createElement("option", { key: eq, value: eq }, eq))
                                 )
                             ),
                             React.createElement("div", null,
                                 React.createElement("label", { className: `block text-xs font-bold uppercase mb-1 ${darkMode ? 'text-slate-400' : 'text-slate-500'}` }, "Novedades / Alertas"),
                                 React.createElement("textarea", { name: "novedades", rows: "2", placeholder: "Ej: Se cortó la luz...", className: `w-full p-3 border rounded-xl focus:outline-none focus:border-[#ff6b00] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`, onChange: handleChange })
                             ),
-                            React.createElement("button", { onClick: () => setShowPreview(true), className: "w-full py-4 bg-slate-900 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2" }, "Revisar Cierre")
+                            React.createElement("button", { onClick: () => setShowPreview(true), className: `w-full py-4 rounded-xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 ${stockCritico.length > 0 ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'}` }, 
+                                stockCritico.length > 0 ? `⚠️ Revisar Cierre (${stockCritico.length} quiebres)` : "Revisar Cierre"
+                            )
                         )
                     ) : (
                         React.createElement("div", { className: "fade-in h-full flex flex-col" },
